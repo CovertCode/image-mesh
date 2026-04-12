@@ -1,0 +1,12 @@
+[
+  {
+    "email": "admin@example.com",
+    "key": "4f9a0d20341f306c6c8646eec92ce544bd560fbded97197d648099b9263d7962",
+    "updated_at": "2026-04-11T17:07:37.008Z"
+  },
+  {
+    "email": "admin2@example.com",
+    "key": "5739a332470da52f51366346bfe1c21ad7297b67c1a162a086277f9593ef11e3",
+    "updated_at": "2026-04-11T17:07:49.467Z"
+  }
+]

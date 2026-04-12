@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CoreReflect Dashboard V2</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; background: #f0f2f5; color: #1c1e21; }
+        section { background: white; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+        .card { border: 1px solid #e1e4e8; padding: 15px; border-radius: 8px; background: #fff; transition: transform 0.2s; }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .card img { width: 100%; height: 150px; object-fit: cover; border-radius: 6px; background: #fafafa; }
+        input, select, button { padding: 10px; margin: 5px 0; width: 100%; border-radius: 6px; border: 1px solid #ddd; font-size: 14px; }
+        button { cursor: pointer; background: #007bff; color: white; border: none; font-weight: 600; }
+        button:hover { background: #0056b3; }
+        .hidden { display: none !important; }
+        .meta { font-size: 12px; color: #65676b; margin-top: 8px; line-height: 1.4; }
+        .badge { background: #e7f3ff; color: #1877f2; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+        .key-row { display: flex; align-items: center; gap: 10px; font-family: monospace; font-size: 12px; background: #f8f9fa; padding: 8px; border-radius: 4px; margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+
+    <h1>🖼️ CoreReflect Dashboard</h1>
+
+    <!-- 1. AUTH & KEYS -->
+    <section id="auth-section">
+        <div id="login-form">
+            <h2>Login / Register</h2>
+            <input type="email" id="email" placeholder="Email">
+            <input type="password" id="password" placeholder="Password">
+            <div style="display: flex; gap: 10px;">
+                <button onclick="handleRegister()">Register</button>
+                <button onclick="handleLogin()" style="background: #28a745;">Login</button>
+            </div>
+        </div>
+
+        <div id="key-management" class="hidden">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2>Welcome, <span id="user-display"></span></h2>
+                <button onclick="logout()" style="background: #dc3545; width: auto; padding: 5px 15px;">Logout</button>
+            </div>
+            
+            <div id="key-selector-area" style="border-top: 1px solid #eee; padding-top: 15px;">
+                <h3>Your API Keys</h3>
+                <div id="existing-keys-list"></div>
+                <button onclick="generateKey()" style="background: #6f42c1; margin-top: 10px;">+ Generate New API Key</button>
+                <p class="meta" id="active-key-status">No active key. Select or generate one to manage projects.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- 2. PROJECTS -->
+    <section id="project-section" class="hidden">
+        <h2>📁 Projects</h2>
+        <div style="display: flex; gap: 10px;">
+            <input type="text" id="new-project-name" placeholder="Project Name (e.g. Website Assets)">
+            <button onclick="createProject()" style="width: 150px;">Create</button>
+        </div>
+        <div id="project-list" class="grid" style="margin-top: 20px;"></div>
+    </section>
+
+    <!-- 3. IMAGES -->
+    <section id="image-section" class="hidden">
+        <h2>📤 Upload & Gallery</h2>
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <label>Upload to:</label>
+            <select id="upload-project-select"></select>
+            <input type="file" id="file-input" accept="image/*">
+            <button onclick="handleUpload()" style="margin-top: 10px;">Upload Image</button>
+        </div>
+        <div id="image-list" class="grid"></div>
+    </section>
+
+    <script>
+        const API_BASE = 'http://localhost:3000/v1';
+        const IMG_BASE = 'http://localhost:3000/i';
+
+        let state = {
+            token: localStorage.getItem('token'),
+            apiKey: localStorage.getItem('apiKey'), // This is the FULL key used for requests
+            userEmail: localStorage.getItem('userEmail')
+        };
+
+        // --- API HELPER ---
+        const api = async (endpoint, method = 'GET', body = null, forceSession = false) => {
+            const headers = {};
+            if (body) headers['Content-Type'] = 'application/json';
+
+            // Logic: Use Session Token for Auth routes, API Key for Resource routes
+            if (forceSession && state.token) {
+                headers['Authorization'] = `Bearer ${state.token}`;
+            } else if (state.apiKey) {
+                headers['x-api-key'] = state.apiKey;
+            }
+
+            const options = { method, headers };
+            if (body) options.body = JSON.stringify(body);
+
+            const res = await fetch(`${API_BASE}${endpoint}`, options);
+            if (res.status === 401 || res.status === 403) {
+                console.warn("Auth failed for", endpoint);
+            }
+            return await res.json();
+        };
+
+        // --- AUTH & KEYS ---
+        const handleLogin = async () => {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const res = await api('/auth/login', 'POST', { email, password });
+            if (res.token) {
+                state.token = res.token;
+                state.userEmail = email;
+                localStorage.setItem('token', res.token);
+                localStorage.setItem('userEmail', email);
+                await fetchExistingKeys();
+                updateUI();
+            } else alert(res.error);
+        };
+
+        const handleRegister = async () => {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const res = await api('/auth/register', 'POST', { email, password });
+            alert(res.success ? 'Registered! You can now login.' : res.error);
+        };
+
+        const fetchExistingKeys = async () => {
+            if (!state.token) return;
+            const res = await api('/auth/keys', 'GET', null, true);
+            const list = document.getElementById('existing-keys-list');
+            list.innerHTML = '';
+            
+            if (res.keys && res.keys.length > 0) {
+                res.keys.forEach(k => {
+                    const isCurrent = state.apiKey && state.apiKey.startsWith(k.split('...')[0]);
+                    list.innerHTML += `
+                        <div class="key-row">
+                            <span>🔑 ${k}</span>
+                            ${isCurrent ? '<span class="badge">ACTIVE</span>' : ''}
+                        </div>`;
+                });
+                // If we have a stored key, try loading data
+                if (state.apiKey) loadDashboardData();
+            } else {
+                list.innerHTML = '<p class="meta">No API keys found. Generate one to start.</p>';
+            }
+        };
+
+        const generateKey = async () => {
+            const res = await api('/auth/keys', 'POST', null, true);
+            if (res.api_key) {
+                state.apiKey = res.api_key;
+                localStorage.setItem('apiKey', res.api_key);
+                alert('New Full API Key Generated and Activated!');
+                updateUI();
+                loadDashboardData();
+            }
+        };
+
+        const logout = () => { localStorage.clear(); location.reload(); };
+
+        // --- DASHBOARD DATA ---
+        const loadDashboardData = async () => {
+            if (!state.apiKey) return;
+            const projRes = await api('/projects');
+            if (projRes.error) return; // Key might be invalid/revoked
+
+            // Load Projects
+            const pList = document.getElementById('project-list');
+            const pSelect = document.getElementById('upload-project-select');
+            pList.innerHTML = ''; pSelect.innerHTML = '';
+            
+            projRes.data?.forEach(p => {
+                pList.innerHTML += `<div class="card">
+                    <b>${p.name}</b><br><span class="badge">${p.slug}</span>
+                    <div class="meta">${p.image_count} images | ${(p.total_size_bytes/1024).toFixed(1)}KB</div>
+                </div>`;
+                pSelect.innerHTML += `<option value="${p.slug}">${p.name}</option>`;
+            });
+
+            // Load Images
+            const imgRes = await api('/images');
+            const iList = document.getElementById('image-list');
+            iList.innerHTML = '';
+            imgRes.data?.forEach(img => {
+                const thumb = `${IMG_BASE}/${img.file_path}?w=300&h=200&m=cover`;
+                iList.innerHTML += `<div class="card">
+                    <img src="${thumb}">
+                    <div class="meta">
+                        <b>${img.filename}</b><br>
+                        <a href="${IMG_BASE}/${img.file_path}" target="_blank">Original</a> | 
+                        <button onclick="deleteImage('${img.id}')" style="background:none; color:red; width:auto; padding:0; border:none; text-decoration:underline;">Delete</button>
+                    </div>
+                </div>`;
+            });
+        };
+
+        const createProject = async () => {
+            const name = document.getElementById('new-project-name').value;
+            if (!name) return;
+            const res = await api('/projects', 'POST', { name });
+            if (res.success) {
+                document.getElementById('new-project-name').value = '';
+                loadDashboardData();
+            } else alert(res.error);
+        };
+
+        const handleUpload = async () => {
+            const file = document.getElementById('file-input').files[0];
+            const project = document.getElementById('upload-project-select').value;
+            if (!file || !project) return alert('Select file and project');
+
+            const formData = new FormData();
+            formData.append('project', project);
+            formData.append('file', file);
+
+            const res = await fetch(`${API_BASE}/upload`, {
+                method: 'POST', headers: { 'x-api-key': state.apiKey },
+                body: formData
+            });
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById('file-input').value = '';
+                loadDashboardData();
+            } else alert(data.error);
+        };
+
+        const deleteImage = async (id) => {
+            if (confirm('Delete image?')) {
+                await api(`/images/${id}`, 'DELETE');
+                loadDashboardData();
+            }
+        };
+
+        // --- UI CONTROL ---
+        const updateUI = () => {
+            if (state.token) {
+                document.getElementById('login-form').classList.add('hidden');
+                document.getElementById('key-management').classList.remove('hidden');
+                document.getElementById('user-display').innerText = state.userEmail;
+                fetchExistingKeys();
+            }
+            if (state.apiKey) {
+                document.getElementById('project-section').classList.remove('hidden');
+                document.getElementById('image-section').classList.remove('hidden');
+                document.getElementById('active-key-status').innerHTML = `✅ <b>Active Key Loaded:</b> ${state.apiKey.substring(0,8)}...`;
+                document.getElementById('active-key-status').style.color = 'green';
+            }
+        };
+
+        updateUI();
+    </script>
+</body>
+</html>
