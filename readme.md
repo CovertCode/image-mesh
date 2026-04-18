@@ -27,8 +27,8 @@ Imagemesh is a lightweight, developer-centric image hosting SaaS built with **No
 
 ### 1. Clone & Install
 ```bash
-git clone https://github.com/yourusername/core-reflect.git
-cd core-reflect
+git clone https://github.com/CovertCode/image-mesh.git
+cd imagemesh
 npm install
 ```
 
