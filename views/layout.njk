@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title | default("PixelVault") }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0a0a0a;
+            color: #ededed;
+        }
+
+        .nav-item.active {
+            background: rgba(255, 255, 255, 0.05);
+            border-left: 3px solid #3b82f6;
+            color: white;
+        }
+    </style>
+
+    <script>
+        // Dead Simple Globals
+        window.token = localStorage.getItem('token');
+        window.apikey = localStorage.getItem('apikey');
+
+        if (!window.token && window.location.pathname !== '/') window.location.href = '/';
+
+        window.handleLogout = () => {
+            localStorage.clear();
+            window.location.href = '/';
+        };
+
+        window.switchApiKey = (key) => {
+            localStorage.setItem('apikey', key);
+            window.location.reload();
+        };
+    </script>
+</head>
+
+<body class="min-h-screen">
+    <div class="flex h-screen bg-black overflow-hidden">
+        {% if hideSidebar != true %}{% include "partials/sidebar.njk" %}{% endif %}
+
+        <main class="flex-1 overflow-y-auto flex flex-col">
+            {% if hideHeader != true %}
+            <header
+                class="h-16 border-b border-neutral-800 flex items-center justify-between px-8 sticky top-0 bg-black/80 backdrop-blur-md z-50 shrink-0">
+                <h2 class="text-[10px] font-black uppercase tracking-widest text-neutral-500">{{ activeTab }}</h2>
+
+                <div class="flex items-center gap-4">
+                    <!-- Key Selector -->
+                    <select id="key-selector" onchange="setActiveKey(this.value)"
+                        class="bg-neutral-900 border border-neutral-800 text-[10px] font-bold uppercase rounded-full py-2 px-4 outline-none text-blue-500">
+                        <option value="">No Keys Found</option>
+                    </select>
+                    <button onclick="handleLogout()"
+                        class="text-[10px] font-bold text-red-500 uppercase">Logout</button>
+                </div>
+            </header>
+            {% endif %}
+
+            <div class="flex-1">{% block content %}{% endblock %}</div>
+        </main>
+    </div>
+
+    <script>
+        async function loadHeaderKeys() {
+            // 1. Exit if no token or on login page
+            if (!window.token || window.location.pathname === '/') return;
+
+            // 2. Identify the dropdown element
+            const selector = document.getElementById('global-key-selector');
+
+            // 3. GUARD CLAUSE: If header is hidden or element is missing, stop here.
+            if (!selector) {
+                console.log('[System] Header selector not found on this page. Skipping key load.');
+                return;
+            }
+
+            try {
+                const res = await fetch('/v1/auth/keys', {
+                    headers: { 'Authorization': `Bearer ${window.token}` }
+                });
+                const data = await res.json();
+
+                if (data.keys && data.keys.length > 0) {
+                    selector.innerHTML = data.keys.map(k => `
+                <option value="${k.key_hash}" ${window.apikey === k.key_hash ? 'selected' : ''}>
+                    ${k.label}
+                </option>
+            `).join('');
+
+                    // 4. Auto-select first key if none is currently set in localStorage
+                    if (!window.apikey) {
+                        console.log('[System] No active key found. Auto-selecting first available.');
+                        window.switchApiKey(data.keys[0].key_hash);
+                    }
+                } else {
+                    selector.innerHTML = '<option value="">Generate Key in Settings</option>';
+                }
+            } catch (err) {
+                console.error("[System] Failed to fetch header keys:", err);
+            }
+        }
+        window.addEventListener('DOMContentLoaded', loadHeaderKeys);
+    </script>
+</body>
+
+</html>

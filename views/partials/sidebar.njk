@@ -1,0 +1,86 @@
+<aside class="w-64 border-r border-neutral-800 flex flex-col hidden lg:flex shrink-0 h-full">
+    <!-- Brand / Logo -->
+    <div class="p-6">
+        <div class="flex items-center gap-3 mb-10">
+            <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-500/20">
+                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 002-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                </svg>
+            </div>
+            <span class="font-bold text-lg tracking-tight">PixelVault</span>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="space-y-1.5">
+            <a href="/dashboard" class="nav-item {% if activeTab == 'overview' %}active{% endif %} flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all text-neutral-500 hover:text-white hover:bg-neutral-900/50">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+                Overview
+            </a>
+            <a href="/projects" class="nav-item {% if activeTab == 'projects' %}active{% endif %} flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all text-neutral-500 hover:text-white hover:bg-neutral-900/50">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                Projects
+            </a>
+            <a href="/gallery" class="nav-item {% if activeTab == 'gallery' %}active{% endif %} flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all text-neutral-500 hover:text-white hover:bg-neutral-900/50">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                Gallery
+            </a>
+            <a href="/settings" class="nav-item {% if activeTab == 'settings' %}active{% endif %} flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all text-neutral-500 hover:text-white hover:bg-neutral-900/50">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+                API Keys
+            </a>
+            <a href="/upload" class="nav-item {% if activeTab == 'upload' %}active{% endif %} flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all text-neutral-500 hover:text-white hover:bg-neutral-900/50">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                Upload
+            </a>
+        </nav>
+    </div>
+
+    <!-- Storage Info -->
+    <div class="mt-auto p-6 border-t border-neutral-800">
+        <div class="p-4 rounded-2xl bg-neutral-900/50 border border-neutral-800">
+            <p class="text-xs font-bold text-blue-500 uppercase tracking-widest mb-2">Storage</p>
+            <div class="h-1.5 w-full bg-neutral-800 rounded-full overflow-hidden mb-2">
+                <div id="side-storage-bar" class="h-full bg-blue-600 transition-all duration-500" style="width: 0%"></div>
+            </div>
+            <p id="side-storage-text" class="text-[10px] text-neutral-400">Loading usage...</p>
+        </div>
+
+        <!-- Profile Section -->
+        <div class="flex items-center gap-3 mt-6 px-2">
+            <div id="side-avatar" class="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-sm font-bold uppercase text-white">
+                ??
+            </div>
+            <div class="flex-1 overflow-hidden">
+                <p id="side-username" class="text-sm font-semibold truncate text-white">User</p>
+                <p id="side-plan" class="text-xs text-neutral-500 truncate">Free Plan</p>
+            </div>
+        </div>
+
+        <!-- Global Action -->
+        <button onclick="handleLogout()" class="w-full text-left text-[10px] font-bold text-red-500/80 hover:text-red-500 uppercase tracking-widest mt-4 px-2 transition-colors">
+            Log Out
+        </button>
+    </div>
+</aside>
+
+<script>
+    (function() {
+        // Sync User Info from LocalStorage
+        const email = localStorage.getItem('userEmail');
+        if (email) {
+            const username = email.split('@')[0];
+            document.getElementById('side-username').innerText = username;
+            document.getElementById('side-avatar').innerText = username.substring(0, 2).toUpperCase();
+        }
+
+        // Logic to update storage (To be triggered by main page controllers)
+        window.updateSidebarStorage = (usedBytes, limitBytes) => {
+            const usedMB = (usedBytes / (1024 * 1024)).toFixed(1);
+            const limitMB = (limitBytes / (1024 * 1024)).toFixed(0);
+            const percent = Math.min((usedBytes / limitBytes) * 100, 100);
+            
+            document.getElementById('side-storage-bar').style.width = percent + '%';
+            document.getElementById('side-storage-text').innerText = `${usedMB} MB of ${limitMB} MB used`;
+        };
+    })();
+</script>

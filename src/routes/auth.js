@@ -73,56 +73,31 @@ export default async function authRoutes(fastify, options) {
         }
     });
 
-    // 3. Generate New API Key
+    // POST /keys - Store as plaintext
     fastify.post('/keys', { preHandler: requireSession }, async (req, reply) => {
-        try {
-            const rawKey = crypto.randomBytes(32).toString('hex');
-            const hashedKey = hashApiKey(rawKey); // This will now work!
-
-            run('INSERT INTO api_keys (key_hash, user_id) VALUES (?, ?)', [hashedKey, req.sessionUserId]);
-            return { success: true, api_key: rawKey };
-        } catch (err) {
-            fastify.log.error(err);
-            return reply.status(500).send({ error: 'Failed to generate key' });
-        }
+        const rawKey = crypto.randomBytes(24).toString('hex');
+        run('INSERT INTO api_keys (user_id, key_hash, label) VALUES (?, ?, ?)',
+            [req.sessionUserId, rawKey, req.body.label || 'New Key']);
+        return { success: true, api_key: rawKey };
     });
 
-    // 4. List User's API Keys
+    // GET /keys - Return raw keys for the dropdown
     fastify.get('/keys', { preHandler: requireSession }, async (req, reply) => {
-        try {
-            const keys = query('SELECT key_hash FROM api_keys WHERE user_id = ?', [req.sessionUserId]);
-            // Mask the keys so we don't expose full keys in the list view
-            const maskedKeys = keys.map(k => {
-                const full = k.key_hash;
-                return `${full.substring(0, 8)}...${full.substring(full.length - 4)}`;
-            });
-            return { success: true, keys: maskedKeys };
-        } catch (err) {
-            fastify.log.error('Key fetch error:', err);
-            return reply.status(500).send({ error: 'Failed to fetch API keys' });
-        }
+        const keys = query('SELECT label, key_hash FROM api_keys WHERE user_id = ?', [req.sessionUserId]);
+        return { success: true, keys }; // key_hash is now the raw string
     });
 
-    // 5. Revoke (Delete) API Key
-    fastify.delete('/keys/:key', { preHandler: requireSession }, async (req, reply) => {
-        const { key } = req.params;
-
-        if (!key) {
-            return reply.status(400).send({ error: 'API key string is required' });
-        }
-
+    // 5. Revoke (Delete) API Key by ID
+    fastify.delete('/keys/:id', { preHandler: requireSession }, async (req, reply) => {
         try {
-            // Scoped to sessionUserId to ensure users can only delete their own keys
-            const res = run('DELETE FROM api_keys WHERE key_hash = ? AND user_id = ?', [key, req.sessionUserId]);
+            const res = run('DELETE FROM api_keys WHERE id = ? AND user_id = ?', [req.params.id, req.sessionUserId]);
 
             if (res.changes === 0) {
-                return reply.status(404).send({ error: 'Key not found or you do not have permission to delete it' });
+                return reply.status(404).send({ error: 'Key not found' });
             }
-
-            return { success: true, message: 'API key successfully revoked' };
+            return { success: true, message: 'API key revoked' };
         } catch (err) {
-            fastify.log.error('Key revocation error:', err);
-            return reply.status(500).send({ error: 'Failed to revoke API key' });
+            return reply.status(500).send({ error: 'Failed to revoke key' });
         }
     });
 }

@@ -1,0 +1,88 @@
+{% extends "layout.njk" %}
+
+{% block content %}
+<div class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-neutral-950 to-neutral-900">
+    <div class="w-full max-w-md p-8 rounded-2xl glass-panel shadow-2xl fade-in" id="auth-card">
+        <div class="text-center mb-8">
+            <div class="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">
+                <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 002-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                </svg>
+            </div>
+            <h1 class="text-2xl font-bold tracking-tight" id="auth-title">Sign In</h1>
+            <p class="text-neutral-400 text-sm mt-2">Securely host and share your moments.</p>
+        </div>
+
+        <form id="auth-form" class="space-y-4">
+            <div id="name-field" class="hidden">
+                <label class="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-1">Full Name</label>
+                <input type="text" id="reg-name" class="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all" placeholder="John Doe">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-1">Email Address</label>
+                <input type="email" id="email" required class="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all" placeholder="name@company.com">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-1">Password</label>
+                <input type="password" id="password" required class="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all" placeholder="••••••••">
+            </div>
+            <button type="submit" id="submit-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors shadow-lg shadow-blue-500/10">
+                Continue
+            </button>
+        </form>
+
+        <div class="mt-6 text-center">
+            <button onclick="toggleAuth()" id="toggle-btn" class="text-sm text-neutral-400 hover:text-white transition-colors">
+                Don't have an account? <span class='text-blue-500'>Register</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let mode = 'login';
+    const API_BASE = '/v1/auth';
+
+    function toggleAuth() {
+        mode = mode === 'login' ? 'register' : 'login';
+        document.getElementById('auth-title').innerText = mode === 'login' ? 'Sign In' : 'Create Account';
+        document.getElementById('name-field').classList.toggle('hidden');
+        document.getElementById('submit-btn').innerText = mode === 'login' ? 'Continue' : 'Sign Up';
+        document.getElementById('toggle-btn').innerHTML = mode === 'login' 
+            ? "Don't have an account? <span class='text-blue-500'>Register</span>" 
+            : "Already have an account? <span class='text-blue-500'>Login</span>";
+    }
+
+    document.getElementById('auth-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+
+        const url = mode === 'login' ? `${API_BASE}/login` : `${API_BASE}/register`;
+        
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+            const data = await res.json();
+
+            if (res.ok) {
+                if (mode === 'login') {
+                    localStorage.setItem('token', data.token);
+                    localStorage.setItem('userEmail', email);
+                    window.location.href = '/dashboard';
+                } else {
+                    showNotification('Account created! Please login.', 'success');
+                    toggleAuth();
+                }
+            } else {
+                showNotification(data.error || 'Request failed', 'error');
+            }
+        } catch (err) {
+            showNotification('Server unreachable', 'error');
+        }
+    };
+</script>
+{% endblock %}

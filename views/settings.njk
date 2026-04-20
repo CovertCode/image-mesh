@@ -1,0 +1,163 @@
+{% extends "layout.njk" %}
+
+{% block content %}
+<div class="p-8 max-w-7xl mx-auto fade-in">
+    <!-- Page Header -->
+    <div class="flex justify-between items-end mb-10">
+        <div>
+            <h1 class="text-4xl font-bold tracking-tight text-white mb-2">API Access</h1>
+            <p class="text-neutral-400">Manage your plaintext keys for programmatic uploads.</p>
+        </div>
+        <button onclick="handleGenerateKey()"
+            class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-6 py-3 rounded-xl transition-all shadow-lg shadow-blue-500/20 flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+            </svg>
+            Generate New Key
+        </button>
+    </div>
+
+    <!-- Keys Table -->
+    <div class="bg-neutral-900 border border-neutral-800 rounded-3xl overflow-hidden">
+        <table class="w-full text-left">
+            <thead>
+                <tr
+                    class="border-b border-neutral-800 text-[10px] font-bold text-neutral-500 uppercase tracking-widest bg-black/20">
+                    <th class="px-8 py-5">Label</th>
+                    <th class="px-8 py-5">API Key (Plaintext)</th>
+                    <th class="px-8 py-5">Status</th>
+                    <th class="px-8 py-5 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="api-key-list" class="divide-y divide-neutral-800 text-sm">
+                <!-- Data injected by JS -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Security Warning -->
+    <div class="mt-8 p-6 rounded-2xl bg-orange-500/5 border border-orange-500/20 flex gap-4">
+        <div class="shrink-0 text-orange-500">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+                </path>
+            </svg>
+        </div>
+        <div>
+            <h4 class="text-sm font-bold text-orange-200">Security Note</h4>
+            <p class="text-xs text-neutral-400 mt-1">These keys are stored in plaintext. Do not share them. If a key is
+                compromised, delete it immediately.</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    /**
+     * Fetch and render all keys owned by the user.
+     */
+    async function fetchKeys() {
+        if (!window.token) return;
+
+        try {
+            const res = await fetch('/v1/auth/keys', {
+                headers: { 'Authorization': `Bearer ${window.token}` }
+            });
+            const data = await res.json();
+
+            if (!data.success) return alert("Failed to load keys: " + data.error);
+
+            const list = document.getElementById('api-key-list');
+            list.innerHTML = data.keys.map(k => {
+                const isActive = window.apikey === k.key_hash;
+                return `
+                    <tr class="hover:bg-white/5 transition-colors">
+                        <td class="px-8 py-5">
+                            <span class="font-bold ${isActive ? 'text-blue-500' : 'text-white'}">${k.label}</span>
+                        </td>
+                        <td class="px-8 py-5">
+                            <code class="text-xs font-mono text-neutral-500 bg-black/30 px-2 py-1 rounded select-all">${k.key_hash}</code>
+                        </td>
+                        <td class="px-8 py-5">
+                            ${isActive
+                        ? '<span class="text-[10px] font-black text-blue-500 bg-blue-500/10 px-2 py-1 rounded">ACTIVE</span>'
+                        : '<span class="text-[10px] font-bold text-neutral-600">INACTIVE</span>'
+                    }
+                        </td>
+                        <td class="px-8 py-5 text-right">
+                            <button onclick="revokeKey(${k.id})" class="text-neutral-600 hover:text-red-500 transition-colors">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke-width="2"></path></svg>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        } catch (err) {
+            console.error(err);
+            alert("Network error fetching keys.");
+        }
+    }
+
+    /**
+     * Generate a new plaintext key.
+     */
+    async function handleGenerateKey() {
+        const label = prompt("Enter a label for this key (e.g. My Website):", "New Key");
+        if (!label) return;
+
+        try {
+            const res = await fetch('/v1/auth/keys', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${window.token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ label })
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                // Automatically set this new key as the active one
+                localStorage.setItem('apikey', data.api_key);
+                alert("Key Generated! It is now your active key.");
+
+                // Refresh everything
+                fetchKeys();
+                if (window.loadHeaderKeys) window.loadHeaderKeys();
+                else window.location.reload();
+            } else {
+                alert("Error: " + data.error);
+            }
+        } catch (err) {
+            alert("Failed to generate key.");
+        }
+    }
+
+    /**
+     * Revoke a key using its ID.
+     */
+    async function revokeKey(id) {
+        if (!confirm("Are you sure? Any application using this key will stop working immediately.")) return;
+
+        try {
+            const res = await fetch(`/v1/auth/keys/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${window.token}` }
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                fetchKeys();
+                if (window.loadHeaderKeys) window.loadHeaderKeys();
+            } else {
+                alert("Error: " + data.error);
+            }
+        } catch (err) {
+            alert("Failed to delete key.");
+        }
+    }
+
+    // Initial load
+    window.addEventListener('load', fetchKeys);
+</script>
+{% endblock %}

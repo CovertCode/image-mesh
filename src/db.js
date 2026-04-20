@@ -41,6 +41,15 @@ export const initDb = () => {
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE SET NULL
     );
+
+    CREATE TABLE IF NOT EXISTS api_keys (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        key_hash TEXT UNIQUE NOT NULL,
+        label TEXT DEFAULT 'Default Key',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
   `;
     db.exec(schema);
 
@@ -64,6 +73,14 @@ export const initDb = () => {
     const imageCols = db.pragma('table_info(images)');
     if (!imageCols.some(col => col.name === 'metadata')) {
         db.exec('ALTER TABLE images ADD COLUMN metadata TEXT DEFAULT "{}"');
+    }
+
+    // Migration: Add label to api_keys if missing
+    const keyCols = db.pragma('table_info(api_keys)');
+    if (!keyCols.some(col => col.name === 'label')) {
+        db.exec("ALTER TABLE api_keys ADD COLUMN label TEXT DEFAULT 'Legacy Key'");
+        db.exec("ALTER TABLE api_keys ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP");
+        console.log('Migration: Added label and created_at to api_keys.');
     }
     console.log('Database initialized successfully.');
 };

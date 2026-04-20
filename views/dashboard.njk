@@ -1,0 +1,123 @@
+{% extends "layout.njk" %}
+
+{% block content %}
+<div class="p-8 max-w-7xl mx-auto fade-in">
+    <!-- Welcome Header -->
+    <div class="mb-10">
+        <h1 class="text-4xl font-bold tracking-tight text-white mb-2">Overview</h1>
+        <p class="text-neutral-400">Welcome to your PixelVault dashboard.</p>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        <!-- Projects Card -->
+        <div class="stat-card p-6 rounded-3xl bg-neutral-900 border border-neutral-800">
+            <h3 class="text-neutral-500 text-xs font-bold uppercase tracking-widest">Total Projects</h3>
+            <p id="stat-projects" class="text-4xl font-bold mt-2 text-white">0</p>
+        </div>
+
+        <!-- Images Card -->
+        <div class="stat-card p-6 rounded-3xl bg-neutral-900 border border-neutral-800">
+            <h3 class="text-neutral-500 text-xs font-bold uppercase tracking-widest">Total Images</h3>
+            <p id="stat-images" class="text-4xl font-bold mt-2 text-white">0</p>
+        </div>
+
+        <!-- Storage Card -->
+        <div class="stat-card p-6 rounded-3xl bg-neutral-900 border border-neutral-800">
+            <h3 class="text-neutral-500 text-xs font-bold uppercase tracking-widest">Storage Used</h3>
+            <p id="stat-storage" class="text-4xl font-bold mt-2 text-white">0 <span
+                    class="text-lg font-medium text-neutral-500">MB</span></p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <!-- Quota Details -->
+        <div class="lg:col-span-2 p-8 rounded-3xl bg-neutral-900 border border-neutral-800">
+            <h3 class="text-xl font-bold mb-6 text-white">Storage Breakdown</h3>
+            <div id="storage-details" class="space-y-6">
+                <p class="text-neutral-500 text-sm italic">Calculated based on your project data.</p>
+                <!-- Space for future category breakdowns -->
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="p-8 rounded-3xl bg-neutral-900 border border-neutral-800">
+            <h3 class="text-xl font-bold mb-6 text-white">Recent Uploads</h3>
+            <div id="recent-images-list" class="space-y-4">
+                <p class="text-neutral-500 text-sm">No images found.</p>
+            </div>
+            <button onclick="window.location.href='/gallery'"
+                class="w-full mt-8 py-3 border border-neutral-800 rounded-xl text-xs font-bold text-neutral-400 hover:text-white transition-all uppercase tracking-widest">
+                View Gallery
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    /**
+     * Dashboard Controller
+     * Uses window.apikey from layout.njk
+     */
+    async function fetchDashboardData() {
+        if (!window.apikey) {
+            // Wait a moment for the header to auto-select a key if this is the first load
+            setTimeout(() => {
+                if (!window.apikey) alert("Please select or generate an API Key in Settings.");
+                else fetchDashboardData();
+            }, 500);
+            return;
+        }
+
+        try {
+            // 1. Fetch Projects & Images
+            const [projRes, imgRes] = await Promise.all([
+                fetch('/v1/projects', { headers: { 'x-api-key': window.apikey } }).then(r => r.json()),
+                fetch('/v1/images?limit=5', { headers: { 'x-api-key': window.apikey } }).then(r => r.json())
+            ]);
+
+            if (!projRes.success || !imgRes.success) {
+                return alert("Failed to fetch data. Check if your API Key is valid.");
+            }
+
+            // 2. Update UI Counters
+            const projects = projRes.data || [];
+            const images = imgRes.data || [];
+
+            document.getElementById('stat-projects').innerText = projects.length;
+            document.getElementById('stat-images').innerText = images.length;
+
+            // 3. Calculate Total Storage Usage
+            const totalBytes = projects.reduce((acc, p) => acc + (p.total_size_bytes || 0), 0);
+            const totalMB = (totalBytes / (1024 * 1024)).toFixed(2);
+            document.getElementById('stat-storage').innerHTML = `${totalMB} <span class="text-lg font-medium text-neutral-500">MB</span>`;
+
+            // 4. Update Sidebar progress bar (Assume 100MB limit)
+            if (window.updateSidebarStorage) {
+                window.updateSidebarStorage(totalBytes, 104857600);
+            }
+
+            // 5. Render Recent Images
+            const recentList = document.getElementById('recent-images-list');
+            if (images.length > 0) {
+                recentList.innerHTML = images.map(img => `
+                    <div class="flex items-center gap-4 bg-black/20 p-2 rounded-xl border border-neutral-800/50">
+                        <img src="/i/${img.file_path}?w=100&h=100&m=cover" class="w-12 h-12 rounded-lg object-cover bg-neutral-800">
+                        <div class="flex-1 overflow-hidden">
+                            <p class="text-sm font-bold truncate text-neutral-200">${img.filename}</p>
+                            <p class="text-[10px] text-neutral-500 uppercase font-mono">${(img.size_bytes / 1024).toFixed(1)} KB</p>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+        } catch (err) {
+            console.error('Dashboard Error:', err);
+            alert("Network error: Could not reach the server.");
+        }
+    }
+
+    // Initialize
+    window.addEventListener('load', fetchDashboardData);
+</script>
+{% endblock %}

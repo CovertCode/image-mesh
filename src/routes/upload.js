@@ -5,57 +5,63 @@ import { settings } from '../config.js';
 
 export default async function uploadRoutes(fastify, options) {
   fastify.post('/upload', { preHandler: authenticate }, async (req, reply) => {
-    // 1. Quota Check
-    const usage = get('SELECT COALESCE(SUM(size_bytes), 0) as total FROM images WHERE user_id = ?', [req.user.user_id]);
-    if (usage.total >= req.user.storage_limit_bytes) {
-      return reply.status(403).send({ error: 'Storage quota exceeded.' });
-    }
-
+    const userId = req.user?.id;
     const data = await req.file();
+
     if (!data) return reply.status(400).send({ error: 'No file uploaded' });
 
-    // 2. Mandatory Project Check
-    const projectRef = data.fields.project?.value; // Expects ID or Slug
-    if (!projectRef) {
-      return reply.status(400).send({ error: 'The "project" field (ID or Slug) is mandatory.' });
-    }
-
-    // Find project belonging ONLY to this user
+    const projectRef = data.fields.project?.value;
     const project = get(
       'SELECT id FROM projects WHERE user_id = ? AND (id = ? OR slug = ?)',
-      [req.user.user_id, projectRef, projectRef]
+      [userId, projectRef, projectRef]
     );
 
-    if (!project) {
-      return reply.status(404).send({ error: 'Project not found or access denied.' });
-    }
-
-    // 3. Extraction of other params
-    const convertStr = data.fields.convert?.value || data.fields.format?.value;
-    const qualityStr = data.fields.quality?.value;
-    const widthStr = data.fields.width?.value;
+    if (!project) return reply.status(404).send({ error: 'Project not found' });
 
     try {
+      // 1. Process Image
       const result = await saveImage(data.file, {
-        convert: convertStr,
-        quality: qualityStr,
-        width: widthStr
+        convert: data.fields.convert?.value,
+        quality: data.fields.quality?.value,
+        width: data.fields.width?.value
       }, settings);
 
+      // 2. DEBUG: LOG THE RESULT FROM STORAGE
+      fastify.log.info({ storageResult: result }, '--- STORAGE ENGINE OUTPUT ---');
+
+      // 3. Sync variable names (Ensure file_path is NOT NULL)
+      const filePath = result.relPath || result.path;
+
+      if (!filePath) {
+        fastify.log.error(result, 'CRITICAL: Storage engine failed to return a file path');
+        return reply.status(500).send({ error: 'Internal storage error' });
+      }
+
+      // 4. DATABASE INSERT
       run(`INSERT INTO images (id, user_id, project_id, file_path, filename, extension, size_bytes, width, height, blurhash) 
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [result.id, req.user.user_id, project.id, result.path, data.filename, result.ext, result.size, result.width, result.height, result.blurhash]);
+        [
+          result.id,
+          userId,
+          project.id,
+          filePath, // This is the fix for the NOT NULL constraint
+          data.filename,
+          result.ext,
+          result.size,
+          result.width,
+          result.height,
+          result.blurhash
+        ]);
 
       return {
         success: true,
         id: result.id,
-        url: `/i/${result.path.replace(/\\/g, '/')}`,
-        project_id: project.id,
-        blurhash: result.blurhash
+        url: `/i/${filePath.replace(/\\/g, '/')}`
       };
+
     } catch (err) {
-      fastify.log.error('Upload failed:', err);
-      return reply.status(500).send({ error: 'Image processing failed' });
+      fastify.log.error(err, 'Upload System Error');
+      return reply.status(500).send({ error: 'Database or Processing failure' });
     }
   });
 }

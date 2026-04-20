@@ -21,43 +21,47 @@ export default async function projectRoutes(fastify, options) {
   fastify.post('/', { preHandler: authenticate }, async (req, reply) => {
     const { name } = req.body || {};
 
-    // 1. Validation
+    // 1. LOG INCOMING DATA
+    fastify.log.info({ body: req.body, user: req.user }, 'Project Creation Attempt');
+
     if (!name || typeof name !== 'string' || name.trim().length < 2) {
-      return reply.status(400).send({ error: 'A valid project name (min 2 characters) is required.' });
+      return reply.status(400).send({ error: 'Valid name required (min 2 chars)' });
     }
 
     const cleanName = name.trim();
     const slug = slugify(cleanName);
 
     try {
-      // 2. Check for duplicate slug for THIS user
-      const existing = get('SELECT id FROM projects WHERE user_id = ? AND slug = ?', [req.user.user_id, slug]);
-
-      if (existing) {
-        return reply.status(409).send({
-          error: 'A project with a similar name already exists.',
-          slug: slug
-        });
+      // 2. CHECK FOR USER ID
+      const userId = req.user.id; // Syncing with Step 68 middleware
+      if (!userId) {
+        fastify.log.error('USER ID MISSING FROM REQUEST OBJECT');
+        return reply.status(500).send({ error: 'Auth context error' });
       }
 
-      // 3. Insert into Database
+      // 3. CHECK FOR DUPLICATES
+      const existing = get('SELECT id FROM projects WHERE user_id = ? AND slug = ?', [userId, slug]);
+      if (existing) {
+        fastify.log.warn({ slug, userId }, 'Project slug conflict');
+        return reply.status(409).send({ error: 'A similar project name already exists' });
+      }
+
+      // 4. DATABASE INSERT
       const result = run(
         'INSERT INTO projects (user_id, slug, name) VALUES (?, ?, ?)',
-        [req.user.user_id, slug, cleanName]
+        [userId, slug, cleanName]
       );
 
-      // 4. Return success
+      fastify.log.info({ projectId: result.lastInsertRowid }, 'Project Created Successfully');
+
       return reply.status(201).send({
         success: true,
-        data: {
-          id: result.lastInsertRowid,
-          name: cleanName,
-          slug: slug
-        }
+        data: { id: result.lastInsertRowid, name: cleanName, slug }
       });
 
     } catch (err) {
-      fastify.log.error('Project Creation Error:', err);
+      // 5. LOG THE ACTUAL SQLITE ERROR
+      fastify.log.error(err, 'CRITICAL PROJECT DB ERROR');
       return reply.status(500).send({ error: 'Failed to create project.' });
     }
   });
@@ -66,20 +70,33 @@ export default async function projectRoutes(fastify, options) {
   * LIST ALL PROJECTS
   * GET /v1/projects
   */
-  fastify.get('/', { preHandler: authenticate }, async (req, reply) => {
-    const projects = query(`
-      SELECT p.id, p.slug, p.name, p.created_at,
-             COUNT(i.id) as image_count,
-             COALESCE(SUM(i.size_bytes), 0) as total_size_bytes
-      FROM projects p
-      LEFT JOIN images i ON p.id = i.project_id
-      WHERE p.user_id = ?
-      GROUP BY p.id
-      ORDER BY p.created_at DESC
-    `, [req.user.user_id]);
+ fastify.get('/', { preHandler: authenticate }, async (req, reply) => {
+    // FIX: Change user_id to id
+    const userId = req.user.id; 
 
-    return { success: true, data: projects };
-  });
+    if (!userId) {
+        fastify.log.error('Auth Error: User ID not found in request context');
+        return reply.status(500).send({ error: 'Authentication sync error' });
+    }
+
+    try {
+        const projects = query(`
+            SELECT p.id, p.slug, p.name, p.created_at,
+                   COUNT(i.id) as image_count,
+                   COALESCE(SUM(i.size_bytes), 0) as total_size_bytes
+            FROM projects p
+            LEFT JOIN images i ON p.id = i.project_id
+            WHERE p.user_id = ?
+            GROUP BY p.id
+            ORDER BY p.created_at DESC
+        `, [userId]); // Using the fixed variable
+
+        return { success: true, data: projects };
+    } catch (err) {
+        fastify.log.error(err);
+        return reply.status(500).send({ error: 'Failed to fetch projects' });
+    }
+});
 
   /**
   * GET SINGLE PROJECT STATS
