@@ -6,6 +6,11 @@ import rateLimit from '@fastify/rate-limit';
 import path from 'node:path';
 import pointOfView from '@fastify/view';
 import nunjucks from 'nunjucks';
+import fs from 'fs/promises';
+import net from 'net';
+
+const PORT_FILE = 'server_port.txt';
+
 
 import { initDb } from './db.js';
 import { settings } from './config.js';
@@ -87,14 +92,46 @@ fastify.get('/upload', async (req, reply) => {
 });
 
 fastify.get('/projects', async (req, reply) => {
-    return reply.view('projects.njk', { title: 'Projects | PixelVault' });
+  return reply.view('projects.njk', { title: 'Projects | PixelVault' });
 });
+
+const isPortAvailable = (port) =>
+  new Promise((resolve) => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => server.close(() => resolve(true)));
+    server.listen(port);
+  });
+
+const findAvailablePort = async (startPort = 3000) => {
+  for (let port = startPort; port < 65536; port++) {
+    if (await isPortAvailable(port)) return port;
+  }
+  throw new Error('No available ports found');
+};
+
+const resolvePort = async () => {
+  try {
+    const content = await fs.readFile(PORT_FILE, 'utf-8');
+    const port = parseInt(content.trim(), 10);
+    if (!isNaN(port) && port > 0 && port < 65536) {
+      return port;
+    }
+  } catch {
+    // File missing or unreadable — fall through to auto-assign
+  }
+
+  const port = await findAvailablePort(settings.server.port ?? 3000);
+  await fs.writeFile(PORT_FILE, String(port), 'utf-8');
+  return port;
+};
 
 const start = async () => {
   try {
     initDb();
-    await fastify.listen({ port: settings.server.port, host: settings.server.host });
-    console.log(`Server running at http://${settings.server.host}:${settings.server.port}`);
+    const port = await resolvePort();
+    await fastify.listen({ port, host: settings.server.host });
+    console.log(`Server running at http://${settings.server.host}:${port}`);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
