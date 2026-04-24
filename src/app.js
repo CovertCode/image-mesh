@@ -58,6 +58,7 @@ fastify.register(multipart, { limits: { fileSize: settings.storage.max_file_size
 await fastify.register(rateLimit, {
   max: 100,
   timeWindow: '1 minute',
+  skip: (req) => req.url.startsWith('/i/'),
   // Custom key generator: Use API key if present, otherwise IP
   keyGenerator: (req) => req.headers['x-api-key'] || req.ip
 })
