@@ -69,22 +69,13 @@
 
     <script>
         async function loadHeaderKeys() {
-            // 1. Exit if no token or on login page
             if (!window.token || window.location.pathname === '/') return;
 
-            // 2. Identify the dropdown element
             const selector = document.getElementById('global-key-selector');
-
-            // 3. GUARD CLAUSE: If header is hidden or element is missing, stop here.
-            if (!selector) {
-                console.log('[System] Header selector not found on this page. Skipping key load.');
-                return;
-            }
+            if (!selector) return;
 
             try {
-                const res = await fetch('/v1/auth/keys', {
-                    headers: { 'Authorization': `Bearer ${window.token}` }
-                });
+                const res = await fetch('/v1/auth/keys', { headers: { 'Authorization': `Bearer ${window.token}` } });
                 const data = await res.json();
 
                 if (data.keys && data.keys.length > 0) {
@@ -94,16 +85,17 @@
                 </option>
             `).join('');
 
-                    // 4. Auto-select first key if none is currently set in localStorage
+                    // CRITICAL: If no key is in localStorage, auto-activate the first one 
+                    // so the dashboard actually shows data on first login.
                     if (!window.apikey) {
-                        console.log('[System] No active key found. Auto-selecting first available.');
+                        console.log("No active key found in storage. Auto-activating first key.");
                         window.switchApiKey(data.keys[0].key_hash);
                     }
                 } else {
-                    selector.innerHTML = '<option value="">Generate Key in Settings</option>';
+                    selector.innerHTML = '<option value="">No Keys - Go to Settings</option>';
                 }
-            } catch (err) {
-                console.error("[System] Failed to fetch header keys:", err);
+            } catch (e) {
+                console.error("Header Key Load Failed");
             }
         }
         window.addEventListener('DOMContentLoaded', loadHeaderKeys);

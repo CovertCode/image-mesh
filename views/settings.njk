@@ -65,11 +65,11 @@
             });
             const data = await res.json();
 
-            if (!data.success) return alert("Failed to load keys: " + data.error);
-
             const list = document.getElementById('api-key-list');
             list.innerHTML = data.keys.map(k => {
+                // Check if this specific key string matches our active localStorage key
                 const isActive = window.apikey === k.key_hash;
+
                 return `
                     <tr class="hover:bg-white/5 transition-colors">
                         <td class="px-8 py-5">
@@ -81,7 +81,7 @@
                         <td class="px-8 py-5">
                             ${isActive
                         ? '<span class="text-[10px] font-black text-blue-500 bg-blue-500/10 px-2 py-1 rounded">ACTIVE</span>'
-                        : '<span class="text-[10px] font-bold text-neutral-600">INACTIVE</span>'
+                        : `<button onclick="window.switchApiKey('${k.key_hash}')" class="text-[10px] font-bold text-neutral-400 hover:text-white border border-neutral-700 px-2 py-1 rounded transition-all">SET ACTIVE</button>`
                     }
                         </td>
                         <td class="px-8 py-5 text-right">
@@ -93,11 +93,9 @@
                 `;
             }).join('');
         } catch (err) {
-            console.error(err);
             alert("Network error fetching keys.");
         }
     }
-
     /**
      * Generate a new plaintext key.
      */
