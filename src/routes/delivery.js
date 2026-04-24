@@ -1,4 +1,5 @@
 import fsp from 'node:fs/promises';
+import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import sharp from 'sharp';
@@ -11,7 +12,31 @@ export default async function deliveryRoutes(fastify, options) {
   const uploadsDir = path.resolve(settings.storage.base_path || './uploads');
   await fsp.mkdir(cacheDir, { recursive: true });
 
-  // Handle GET and HEAD for scrapers
+  // HELPER: Sets standard CDN headers for scrapers
+  const setCDNHeaders = (res, stats, contentType) => {
+    const oneYearInSeconds = 31536000;
+    const expiryDate = new Date(Date.now() + (oneYearInSeconds * 1000)).toUTCString();
+
+    // 1. Force remove headers from global plugins
+    res.raw.removeHeader('vary');
+    res.raw.removeHeader('access-control-allow-credentials');
+    res.raw.removeHeader('x-ratelimit-limit');
+    res.raw.removeHeader('x-ratelimit-remaining');
+    res.raw.removeHeader('x-ratelimit-reset');
+
+    // 2. Set Static Headers
+    res.header('Content-Type', contentType);
+    res.header('Content-Length', stats.size);
+    res.header('Last-Modified', stats.mtime.toUTCString());
+    res.header('Cache-Control', `public, max-age=${oneYearInSeconds}, immutable`);
+    res.header('Expires', expiryDate);
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.header('Accept-Ranges', 'bytes');
+    res.header('X-Content-Type-Options', 'nosniff');
+    res.header('X-Served-By', 'PixelVault-CDN');
+  };
+
   fastify.route({
     method: ['GET', 'HEAD'],
     url: '/i/*',
@@ -36,23 +61,11 @@ export default async function deliveryRoutes(fastify, options) {
       const targetFormat = urlExt || diskExt;
       const contentType = MIME_TYPES[targetFormat] || `image/${targetFormat}`;
 
-      // Helper for clean CDN headers
-      const setCDNHeaders = (res) => {
-        // Physically remove problematic headers from raw response
-        res.raw.removeHeader('access-control-allow-credentials');
-        res.raw.removeHeader('vary');
-
-        res.header('Access-Control-Allow-Origin', '*');
-        res.header('Cache-Control', 'public, max-age=31536000, immutable');
-        res.header('X-Content-Type-Options', 'nosniff');
-        res.header('Content-Type', contentType);
-      };
-
       // 1. SERVE ORIGINAL
       if (urlExt === diskExt && !req.query.w && !req.query.h && !req.query.q) {
-        setCDNHeaders(reply);
-        // Note: use the absolute path for sendFile to be safe
-        return reply.sendFile(path.basename(sourcePath), path.dirname(sourcePath));
+        const stats = await fsp.stat(sourcePath);
+        setCDNHeaders(reply, stats, contentType);
+        return reply.send(fs.createReadStream(sourcePath));
       }
 
       // 2. TRANSFORM & CACHE
@@ -65,10 +78,10 @@ export default async function deliveryRoutes(fastify, options) {
       const cachedPath = path.join(cacheDir, `${cacheKey}.${targetFormat}`);
 
       try {
-        await fsp.access(cachedPath);
-        setCDNHeaders(reply);
+        const stats = await fsp.stat(cachedPath);
+        setCDNHeaders(reply, stats, contentType);
         reply.header('X-Cache', 'HIT');
-        return reply.sendFile(path.basename(cachedPath), path.dirname(cachedPath));
+        return reply.send(fs.createReadStream(cachedPath));
       } catch {
         try {
           let transformer = sharp(sourcePath);
@@ -76,11 +89,12 @@ export default async function deliveryRoutes(fastify, options) {
           const output = await transformer.toFormat(targetFormat === 'jpg' ? 'jpeg' : targetFormat, { quality: q }).toBuffer();
 
           await fsp.writeFile(cachedPath, output);
-          setCDNHeaders(reply);
+          const stats = await fsp.stat(cachedPath);
+          setCDNHeaders(reply, stats, contentType);
           reply.header('X-Cache', 'MISS');
           return reply.send(output);
         } catch (err) {
-          return reply.status(500).send({ error: 'Processing error' });
+          return reply.status(500).send({ error: 'Process failed' });
         }
       }
     }
