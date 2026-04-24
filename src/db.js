@@ -71,8 +71,10 @@ export const initDb = () => {
     }
 
     const imageCols = db.pragma('table_info(images)');
-    if (!imageCols.some(col => col.name === 'metadata')) {
-        db.exec('ALTER TABLE images ADD COLUMN metadata TEXT DEFAULT "{}"');
+    if (!imageCols.some(col => col.name === 'original_extension')) {
+        db.exec('ALTER TABLE images ADD COLUMN original_extension TEXT');
+        db.exec('ALTER TABLE images ADD COLUMN target_extension TEXT');
+        console.log('Migration: Added extension tracking to images.');
     }
 
     // Migration: Add label to api_keys if missing

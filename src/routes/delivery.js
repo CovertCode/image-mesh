@@ -5,79 +5,65 @@ import sharp from 'sharp';
 import { settings } from '../config.js';
 
 export default async function deliveryRoutes(fastify, options) {
-
   const cacheDir = path.resolve(settings.storage.cache_path || './cache');
   await fsp.mkdir(cacheDir, { recursive: true });
 
   fastify.get('/i/*', async (req, reply) => {
     const rawPath = req.params['*'];
+    const urlExt = path.extname(rawPath).slice(1).toLowerCase();
+    const pathWithoutExt = rawPath.replace(path.extname(rawPath), '');
 
-    // 1. Extract and Normalize Parameters
-    const w = req.query.w ? parseInt(req.query.w) : null;
-    const h = req.query.h ? parseInt(req.query.h) : null;
-    const q = req.query.q ? parseInt(req.query.q) : 80;
-    const f = req.query.f || 'webp';
-    const m = req.query.m || 'inside'; // Mode: cover, contain, inside
+    const dirPath = path.join(path.resolve(settings.storage.base_path), path.dirname(pathWithoutExt));
+    const baseId = path.basename(pathWithoutExt);
 
-    const sourcePath = path.join(path.resolve(settings.storage.base_path), rawPath);
+    // 1. Find the physical file
+    let actualFileName = null;
+    try {
+      const files = await fsp.readdir(dirPath);
+      actualFileName = files.find(f => f.startsWith(baseId));
+    } catch (e) { return reply.status(404).send({ error: 'Not found' }); }
 
-    // Security: Path Traversal Check
-    if (!sourcePath.startsWith(path.resolve(settings.storage.base_path))) {
-      return reply.status(403).send({ error: 'Access denied' });
+    if (!actualFileName) return reply.status(404).send({ error: 'File not found' });
+
+    const sourcePath = path.join(dirPath, actualFileName);
+    const diskExt = path.extname(actualFileName).slice(1).toLowerCase();
+
+    // 2. Serve Direct if extensions match and no resizing
+    if (urlExt === diskExt && !req.query.w && !req.query.h && !req.query.q) {
+      const buf = await fsp.readFile(sourcePath);
+      return reply.type(`image/${diskExt}`).send(buf);
     }
 
-    // Check if source exists
+    // 3. Transformation & Cache Logic
+    const w = parseInt(req.query.w) || null;
+    const h = parseInt(req.query.h) || null;
+    const q = parseInt(req.query.q) || 80;
+    const m = req.query.m || 'inside';
+    const targetFormat = urlExt || 'webp'; // Default to webp if no extension in URL
+
+    const cacheKey = crypto.createHash('md5')
+      .update(`${baseId}_${w}_${h}_${q}_${targetFormat}_${m}`)
+      .digest('hex');
+    const cachedPath = path.join(cacheDir, `${cacheKey}.${targetFormat}`);
+
     try {
-      await fsp.access(sourcePath);
-    } catch {
-      return reply.status(404).send({ error: 'Source image not found' });
-    }
-
-    // 2. Generate UNIQUE Cache Key
-    // We include every parameter in the string to ensure the MD5 is unique
-    const cacheParams = `path:${rawPath}|w:${w}|h:${h}|q:${q}|f:${f}|m:${m}`;
-    const cacheKey = crypto.createHash('md5').update(cacheParams).digest('hex');
-    const cachedFilePath = path.join(cacheDir, `${cacheKey}.${f}`);
-
-    // DEBUG LOG: Check your terminal to see if these change!
-    fastify.log.info(`Delivery Request: ${m} | Key: ${cacheKey}`);
-
-    // 3. Try serving from Cache
-    try {
-      const cachedBuffer = await fsp.readFile(cachedFilePath);
+      const cachedBuf = await fsp.readFile(cachedPath);
       reply.header('X-Cache', 'HIT');
-      reply.header('Vary', 'Query-String');
-      return reply.type(`image/${f}`).send(cachedBuffer);
-    } catch (err) {
-      // Not in cache, proceed to Sharp
-      reply.header('X-Cache', 'MISS');
-    }
+      return reply.type(`image/${targetFormat}`).send(cachedBuf);
+    } catch {
+      // 4. Process and Cache
+      try {
+        let transformer = sharp(sourcePath);
+        if (w || h) transformer.resize(w, h, { fit: m, withoutEnlargement: true });
 
-    // 4. Image Processing
-    try {
-      let transformer = sharp(sourcePath);
+        const output = await transformer.toFormat(targetFormat, { quality: q }).toBuffer();
+        fsp.writeFile(cachedPath, output).catch(() => { });
 
-      if (w || h) {
-        transformer = transformer.resize(w, h, {
-          fit: m,
-          withoutEnlargement: true,
-          background: { r: 0, g: 0, b: 0, alpha: 0 } // Transparent background for 'contain'
-        });
+        reply.header('X-Cache', 'MISS');
+        return reply.type(`image/${targetFormat}`).send(output);
+      } catch (err) {
+        return reply.status(500).send({ error: 'Process failed' });
       }
-
-      const outputBuffer = await transformer
-        .toFormat(f, { quality: q })
-        .toBuffer();
-
-      // Save to cache (Async)
-      fsp.writeFile(cachedFilePath, outputBuffer).catch(e => console.error('Cache Write Error:', e));
-
-      reply.header('Vary', 'Query-String');
-      return reply.type(`image/${f}`).send(outputBuffer);
-
-    } catch (err) {
-      fastify.log.error('Sharp Error:', err);
-      return reply.status(500).send({ error: 'Processing failed' });
     }
   });
 }

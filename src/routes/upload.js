@@ -21,9 +21,11 @@ export default async function uploadRoutes(fastify, options) {
     try {
       // 1. Process Image
       const result = await saveImage(data.file, {
+        filename: data.filename,
+        keepOriginal: data.fields.keepOriginal?.value, // From frontend checkbox
         convert: data.fields.convert?.value,
         quality: data.fields.quality?.value,
-        width: data.fields.width?.value
+        width: data.fields.width?.value,
       }, settings);
 
       // 2. DEBUG: LOG THE RESULT FROM STORAGE
@@ -38,26 +40,33 @@ export default async function uploadRoutes(fastify, options) {
       }
 
       // 4. DATABASE INSERT
-      run(`INSERT INTO images (id, user_id, project_id, file_path, filename, extension, size_bytes, width, height, blurhash) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      run(`INSERT INTO images (
+                id, user_id, project_id, file_path, filename, 
+                extension, original_extension, target_extension, 
+                size_bytes, width, height, blurhash
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           result.id,
-          userId,
+          req.user.id,
           project.id,
-          filePath, // This is the fix for the NOT NULL constraint
+          result.relPath,
           data.filename,
-          result.ext,
+          result.targetExt,   // maps to extension (legacy support)
+          result.originalExt, // maps to original_extension
+          result.targetExt,   // maps to target_extension
           result.size,
           result.width,
           result.height,
           result.blurhash
-        ]);
+        ]
+      );
 
-      return {
-        success: true,
-        id: result.id,
-        url: `/i/${filePath.replace(/\\/g, '/')}`
-      };
+      // return {
+      //   success: true,
+      //   id: result.id,
+      //   url: `/i/${filePath.replace(/\\/g, '/')}`
+      // };
+      return { success: true, id: result.id, url: `/i/${result.relPath}` };
 
     } catch (err) {
       fastify.log.error(err, 'Upload System Error');

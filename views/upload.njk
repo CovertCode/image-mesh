@@ -22,6 +22,13 @@
             class="border-2 border-dashed border-neutral-800 rounded-3xl p-12 text-center bg-neutral-900/20 hover:border-blue-500 transition-all group cursor-pointer relative">
             <input type="file" id="file-input" class="hidden" multiple accept="image/*"
                 onchange="handleFiles(this.files)">
+            <div class="flex items-center gap-3 mt-4 px-2">
+                <input type="checkbox" id="keep-original"
+                    class="w-4 h-4 rounded border-neutral-800 bg-neutral-900 text-blue-600 focus:ring-blue-500">
+                <label for="keep-original"
+                    class="text-xs font-bold text-neutral-400 uppercase tracking-widest cursor-pointer">Keep Original
+                    Format (No Conversion)</label>
+            </div>
             <div
                 class="w-20 h-20 bg-blue-600/10 rounded-2xl flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform">
                 <svg class="w-10 h-10 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -159,6 +166,7 @@
             const formData = new FormData();
             formData.append('project', project);
             formData.append('file', file);
+            formData.append('keepOriginal', document.getElementById('keep-original').checked);
 
             try {
                 btn.innerText = `Uploading... (${i + 1}/${selectedFiles.length})`;
