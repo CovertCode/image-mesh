@@ -1,0 +1,10 @@
+node_modules
+dist
+.git
+Dockerfile
+.dockerignore
+npm-debug.log
+.env
+core.db
+core.db-shm
+core.db-wal

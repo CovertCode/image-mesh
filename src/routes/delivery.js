@@ -1,5 +1,4 @@
 import fsp from 'node:fs/promises';
-import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import sharp from 'sharp';
@@ -10,32 +9,6 @@ const MIME_TYPES = { 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/pn
 export default async function deliveryRoutes(fastify, options) {
   const cacheDir = path.resolve(settings.storage.cache_path || './cache');
   const uploadsDir = path.resolve(settings.storage.base_path || './uploads');
-  await fsp.mkdir(cacheDir, { recursive: true });
-
-  // HELPER: Sets standard CDN headers for scrapers
-  const setCDNHeaders = (res, stats, contentType) => {
-    const oneYearInSeconds = 31536000;
-    const expiryDate = new Date(Date.now() + (oneYearInSeconds * 1000)).toUTCString();
-
-    // 1. Force remove headers from global plugins
-    res.raw.removeHeader('vary');
-    res.raw.removeHeader('access-control-allow-credentials');
-    res.raw.removeHeader('x-ratelimit-limit');
-    res.raw.removeHeader('x-ratelimit-remaining');
-    res.raw.removeHeader('x-ratelimit-reset');
-
-    // 2. Set Static Headers
-    res.header('Content-Type', contentType);
-    res.header('Content-Length', stats.size);
-    res.header('Last-Modified', stats.mtime.toUTCString());
-    res.header('Cache-Control', `public, max-age=${oneYearInSeconds}, immutable`);
-    res.header('Expires', expiryDate);
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.header('Accept-Ranges', 'bytes');
-    res.header('X-Content-Type-Options', 'nosniff');
-    res.header('X-Served-By', 'PixelVault-CDN');
-  };
 
   fastify.route({
     method: ['GET', 'HEAD'],
@@ -44,10 +17,9 @@ export default async function deliveryRoutes(fastify, options) {
       const rawPath = req.params['*'];
       const urlExt = path.extname(rawPath).slice(1).toLowerCase();
       const pathWithoutExt = rawPath.replace(path.extname(rawPath), '');
-
       const dirPath = path.join(uploadsDir, path.dirname(pathWithoutExt));
       const baseId = path.basename(pathWithoutExt);
-
+      
       let actualFileName = null;
       try {
         const files = await fsp.readdir(dirPath);
@@ -61,14 +33,38 @@ export default async function deliveryRoutes(fastify, options) {
       const targetFormat = urlExt || diskExt;
       const contentType = MIME_TYPES[targetFormat] || `image/${targetFormat}`;
 
-      // 1. SERVE ORIGINAL
+      // Helper to set "Absolute Static" headers
+      const setPureHeaders = (res, stats) => {
+        // Remove ALL noise from the raw Node.js response object
+        res.raw.removeHeader('Vary');
+        res.raw.removeHeader('X-Powered-By');
+        res.raw.removeHeader('Access-Control-Allow-Credentials');
+        res.raw.removeHeader('X-RateLimit-Limit');
+        res.raw.removeHeader('X-RateLimit-Remaining');
+        res.raw.removeHeader('X-RateLimit-Reset');
+
+        res.header('Content-Type', contentType);
+        res.header('Content-Length', stats.size);
+        res.header('Last-Modified', stats.mtime.toUTCString());
+        res.header('Cache-Control', 'public, max-age=31536000, immutable');
+        res.header('Access-Control-Allow-Origin', '*');
+        res.header('Accept-Ranges', 'bytes');
+        res.header('X-Content-Type-Options', 'nosniff');
+        res.header('Connection', 'keep-alive');
+      };
+
+      // --- PATH 1: THE DIRECT ORIGINAL (Zero Processing) ---
       if (urlExt === diskExt && !req.query.w && !req.query.h && !req.query.q) {
         const stats = await fsp.stat(sourcePath);
-        setCDNHeaders(reply, stats, contentType);
-        return reply.send(fs.createReadStream(sourcePath));
+        setPureHeaders(reply, stats);
+        
+        // We use readFile instead of createReadStream to avoid 'Transfer-Encoding: chunked'
+        // for files under a reasonable size (like your 93KB image)
+        const buffer = await fsp.readFile(sourcePath);
+        return reply.send(buffer);
       }
 
-      // 2. TRANSFORM & CACHE
+      // --- PATH 2: TRANSFORMATIONS (Dynamic Resizing) ---
       const w = parseInt(req.query.w) || null;
       const h = parseInt(req.query.h) || null;
       const q = parseInt(req.query.q) || 80;
@@ -79,22 +75,23 @@ export default async function deliveryRoutes(fastify, options) {
 
       try {
         const stats = await fsp.stat(cachedPath);
-        setCDNHeaders(reply, stats, contentType);
-        reply.header('X-Cache', 'HIT');
-        return reply.send(fs.createReadStream(cachedPath));
+        setPureHeaders(reply, stats);
+        return reply.send(await fsp.readFile(cachedPath));
       } catch {
         try {
-          let transformer = sharp(sourcePath);
-          if (w || h) transformer.resize(w, h, { fit: m, withoutEnlargement: true });
-          const output = await transformer.toFormat(targetFormat === 'jpg' ? 'jpeg' : targetFormat, { quality: q }).toBuffer();
-
+          const output = await sharp(sourcePath)
+            .resize(w, h, { fit: m, withoutEnlargement: true })
+            .toFormat(targetFormat === 'jpg' ? 'jpeg' : targetFormat, { quality: q })
+            .toBuffer();
+          
+          await fsp.mkdir(cacheDir, { recursive: true });
           await fsp.writeFile(cachedPath, output);
+          
           const stats = await fsp.stat(cachedPath);
-          setCDNHeaders(reply, stats, contentType);
-          reply.header('X-Cache', 'MISS');
+          setPureHeaders(reply, stats);
           return reply.send(output);
         } catch (err) {
-          return reply.status(500).send({ error: 'Process failed' });
+          return reply.status(500).send({ error: 'CDN Error' });
         }
       }
     }
